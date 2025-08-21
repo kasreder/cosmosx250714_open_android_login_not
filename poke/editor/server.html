@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>TipTap 확장 에디터</title>
+    <style>
+        html, body { height: 100%; margin: 0; padding: 0; }
+        #toolbar { background: #f3f3f3; padding: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+        #editor  { height: calc(100% - 56px); padding: 8px; }
+        .ProseMirror table { border-collapse: collapse; width: 100%; }
+        .ProseMirror th, .ProseMirror td {
+          border: 1px solid #333; padding: 4px;
+        }
+    </style>
+
+    <!-- Import Map -->
+    <script type="importmap">
+        {
+          "imports": {
+            "@tiptap/core": "https://esm.sh/@tiptap/core@2",
+            "@tiptap/starter-kit": "https://esm.sh/@tiptap/starter-kit@2",
+            "@tiptap/extension-image": "https://esm.sh/@tiptap/extension-image@2",
+            "tiptap-extension-resize-image": "https://cdn.jsdelivr.net/npm/tiptap-extension-resize-image@1.2.1/esm/index.js",
+            "@tiptap/extension-table": "https://esm.sh/@tiptap/extension-table@2",
+            "@tiptap/extension-table-row": "https://esm.sh/@tiptap/extension-table-row@2",
+            "@tiptap/extension-table-cell": "https://esm.sh/@tiptap/extension-table-cell@2",
+            "@tiptap/extension-table-header": "https://esm.sh/@tiptap/extension-table-header@2",
+            "@tiptap/extension-underline": "https://esm.sh/@tiptap/extension-underline@2",
+            "@tiptap/extension-text-align": "https://esm.sh/@tiptap/extension-text-align@2",
+            "@tiptap/extension-color": "https://esm.sh/@tiptap/extension-color@2",
+            "@tiptap/extension-text-style": "https://esm.sh/@tiptap/extension-text-style@2"
+          }
+        }
+    </script>
+</head>
+<body>
+<!-- 툴바 -->
+<div id="toolbar">
+    <!-- 굵게, 밑줄, 취소선 -->
+    <button data-cmd="toggleBold"><b>B</b></button>
+    <button data-cmd="toggleUnderline"><u>U</u></button>
+    <button data-cmd="toggleStrike"><s>S</s></button>
+
+    <!-- 정렬 -->
+    <button data-cmd="setTextAlign_left">좌</button>
+    <button data-cmd="setTextAlign_center">가운데</button>
+    <button data-cmd="setTextAlign_right">우</button>
+
+    <!-- 폰트 색상/배경색 -->
+    <input type="color" id="font-color-picker" title="폰트 색상"/>
+    <input type="color" id="highlight-color-picker" title="배경 색상"/>
+
+    <!-- 이미지 업로드 -->
+    <button id="upload-image-btn">파일이미지</button>
+    <input type="file" id="file-input" accept="image/*" style="display:none"/>
+
+    <!-- 테이블 -->
+    <button data-cmd="insertTable">테이블</button>
+    <button data-cmd="addRowBefore">위행추가</button>
+    <button data-cmd="addRowAfter">아행추가</button>
+    <button data-cmd="addColumnBefore">왼열추가</button>
+    <button data-cmd="addColumnAfter">오열추가</button>
+    <button data-cmd="deleteRow">행삭제</button>
+    <button data-cmd="deleteColumn">열삭제</button>
+    <button data-cmd="deleteTable">테이블삭제</button>
+</div>
+
+<!-- 에디터 -->
+<div id="editor"></div>
+
+<script type="module">
+    import { Editor }          from '@tiptap/core';
+    import StarterKit         from '@tiptap/starter-kit';
+    import Image              from '@tiptap/extension-image';
+    import ImageResize        from 'tiptap-extension-resize-image';
+    import Table              from '@tiptap/extension-table';
+    import TableRow           from '@tiptap/extension-table-row';
+    import TableCell          from '@tiptap/extension-table-cell';
+    import TableHeader        from '@tiptap/extension-table-header';
+    import Underline          from '@tiptap/extension-underline';
+    import TextAlign          from '@tiptap/extension-text-align';
+    import TextStyle          from '@tiptap/extension-text-style';
+    import Color              from '@tiptap/extension-color';
+
+    const editor = new Editor({
+      element: document.querySelector('#editor'),
+      extensions: [
+        StarterKit,
+        Underline,
+        // 컬러를 쓰려면 TextStyle 먼저
+        TextStyle,
+        Color.configure({ types: [ TextStyle.name ] }),
+        TextAlign.configure({ types: ['heading','paragraph'] }),
+        Image,
+        ImageResize.configure({ inline: true }),
+        Table.configure({ resizable: true }),
+        TableRow,
+        TableHeader,
+        TableCell,
+      ],
+      content: '<p>여기에 작성해 보세요.</p>'
+    });
+
+    // 툴바 버튼 바인딩
+    document.querySelectorAll('#toolbar [data-cmd]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cmd = btn.getAttribute('data-cmd');
+        if (cmd.startsWith('setTextAlign_')) {
+          const [, align] = cmd.split('_');
+          editor.chain().focus().setTextAlign(align).run();
+        } else {
+          editor.chain().focus()[cmd]().run();
+        }
+      });
+    });
+
+    // 색상 선택
+    document.getElementById('font-color-picker').addEventListener('input', e => {
+      const value = e.target.value;
+      editor.chain().focus().setColor(value).run();
+    });
+    document.getElementById('highlight-color-picker').addEventListener('input', e => {
+      const value = e.target.value;
+      editor.chain().focus().setHighlight({ color: value }).run();
+    });
+
+    // 파일 업로드
+    const fileBtn = document.getElementById('upload-image-btn');
+    const fileInput = document.getElementById('file-input');
+    fileBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        editor.chain().focus().setImage({ src: reader.result }).run();
+        fileInput.value = '';
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Flutter ↔ JS 통신
+    editor.on('update', () => {
+      const html = editor.getHTML();
+      if (window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('onContentChange', html);
+      } else {
+        window.parent.postMessage({ type: 'onContentChange', html }, '*');
+      }
+    });
+</script>
+</body>
+</html>

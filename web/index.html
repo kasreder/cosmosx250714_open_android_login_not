@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <!-- SEO 기본 메타 -->
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="cosmosx">
+  <meta name="keywords" content="cosmosx,cosmos,space,blockchain"/>
+
+  <!-- Open Graph (페이스북, 카카오, 링크 공유시 썸네일 정보) -->
+  <meta property="og:title"       content="cosmosx"/>
+  <meta property="og:description" content="우주로 가자"/>
+  <!--  <meta property="og:image"       content="https://내도메인.com/og-image.png"/>-->
+  <meta property="og:url"         content="https://cosmosx.co.kr/"/>
+
+
+  <!-- iOS meta tags & icons -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="cosmosx">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- (기타) Schema.org JSON-LD 같은 구조화 데이터 -->
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "cosmosx",
+      "url": "https://cosmosx.co.kr"
+    }
+  </script>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-51KTT8G12D"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-51KTT8G12D');
+  </script>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>cosmosx</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

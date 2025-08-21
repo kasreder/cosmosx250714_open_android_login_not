@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Quill 에디터 기본형 (Delta JSON 전송, 이미지 리사이즈 포함)</title>
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.core.css" rel="stylesheet" />
+  <link href="https://unpkg.com/quill-table-ui@1.0.7/dist/index.css" rel="stylesheet" />
+  <style>
+    /* ① 로컬 Noto Sans-Light.ttf 등록 */
+
+    @font-face {
+      font-family: 'Noto Sans';
+      font-style: normal;
+      font-weight: 300;
+      src:
+        /* Flutter Web: /assets/… 경로로 읽어옵니다 */
+        url('/assets/poke/fonts/notosans/NotoSans-Light.ttf') format('truetype'),
+        /* Android WebView: flutter_assets 내부 경로 */
+        url('file:///android_asset/flutter_assets/poke/fonts/notosans/NotoSans-Light.ttf') format('truetype');
+    }
+
+    /* /Users/kview/StudioProjects/cosmosx0511/poke/fonts/notosans */
+    @font-face {
+      font-family: '호빵체';
+      src:
+        url('/assets/poke/fonts/samlip/SLBasic.ttf') format('truetype'),
+        url('file:///android_asset/flutter_assets/poke/fonts/samlip/SLBasic.ttf') format('truetype');
+      font-weight: 500;
+    }
+
+    @font-face {
+      font-family: '호빵체';
+      src:
+        url('/assets/poke/fonts/samlip/SLOut.ttf') format('truetype'),
+        url('file:///android_asset/flutter_assets/poke/fonts/samlip/SLOut.ttf') format('truetype');
+      font-style: italic;
+    }
+
+    @font-face {
+      font-family: 'Nanum';
+      src:
+        url('/assets/poke/fonts/nanum/NanumSquareRoundR.ttf') format('truetype'),
+        url('file:///android_asset/flutter_assets/poke/fonts/nanum/NanumSquareRoundR.ttf') format('truetype');
+      font-weight: 400;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      /* font-family:sans-serif; */
+    }
+
+    body,
+    #titleInput,
+    #editor,
+    .ql-editor {
+      font-family: 'Noto Sans', sans-serif;
+      line-height: 1.6;
+      margin: 0 0 1em;
+    }
+
+    /* Quill font-picker 각각의 클래스에 폰트 지정 */
+    .ql-font-notosans {
+      font-family: 'Noto Sans', sans-serif;
+    }
+
+    .ql-font-nanum {
+      font-family: 'Nanum', sans-serif;
+    }
+
+    .ql-font-roboto {
+      font-family: 'Roboto', sans-serif;
+    }
+
+    .ql-font-serif {
+      font-family: serif;
+    }
+
+    .ql-font-monospace {
+      font-family: monospace;
+    }
+
+    #titleInput {
+      width: 100%;
+      margin: 0px 0px 20px 0px;
+      padding: 16px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+      border-radius: 3px;
+      background-color: transparent;
+    }
+
+    #editor {
+      height: 60vh;
+      margin: 8px 0px;
+      /* padding:8px; */
+      /* background:#fff;  */
+      border: 1px solid #ccc;
+      font-size: larger;
+      box-sizing: border-box;
+      border-radius: 3px;
+      background-color: transparent;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- ① 제목 입력 -->
+  <input id="titleInput" type="text" placeholder="제목을 입력하세요." />
+
+  <!-- ② Quill 에디터 -->
+  <div id="editor"></div>
+
+  <!-- JS 모듈 로딩 -->
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/quill-resize-image@1.0.7/dist/quill-resize-image.min.js"></script>
+  <script src="https://unpkg.com/quill-table-ui@1.0.7/dist/umd/index.js"></script>
+
+  <script>
+    // 1) Quill Font 포맷 가져오기
+    const Font = Quill.import('formats/font');
+    Font.whitelist = ['notosans','nanum','serif','monospace'];
+    Quill.register(Font, true);
+
+    // const Size = Quill.import('attributors/style/size');
+    // Size.whitelist = ['12px', '14px', '16px', '20px', '28px', '40px'];
+    // Quill.register(Size, true);
+
+    // 1) Quill 모듈 등록
+    Quill.register('modules/resize', window.QuillResizeImage);
+    const rawTableUI = window.QuillTableUI || window.quillTableUI || null;
+    if (rawTableUI) {
+      const tableUIModule = rawTableUI.default || rawTableUI;
+      Quill.register({ 'modules/tableUI': tableUIModule }, true);
+    }
+
+    // 2) ImageBlot 확장: width/height 스타일까지 Delta에 보존
+    const BlockEmbed = Quill.import('blots/block/embed');
+    class ResizableImageBlot extends BlockEmbed {
+      static blotName = 'image';
+      static tagName = 'img';
+
+      // Delta → DOM
+      static create(value) {
+        const node = super.create();
+        // value가 문자열(base64 or URL)일 때
+        if (typeof value === 'string') {
+          node.setAttribute('src', value);
+        } else {  // 객체 {url, width, height}
+          node.setAttribute('src', value.url);
+          if (value.width) node.style.width = value.width;
+          if (value.height) node.style.height = value.height;
+        }
+        return node;
+      }
+      // DOM → Delta
+      static value(node) {
+        const src = node.getAttribute('src');
+        const w = node.style.width;
+        const h = node.style.height;
+        // 크기가 있으면 객체로, 없으면 문자열로
+        if (w || h) {
+          return { url: src, width: w, height: h };
+        }
+        return src;
+      }
+    }
+    Quill.register(ResizableImageBlot, true);
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const titleInput = document.getElementById('titleInput');
+
+      // 3) Quill 인스턴스 생성
+      const quill = new Quill('#editor', {
+        theme: 'snow',
+        modules: {
+          toolbar: [
+            ['bold', 'italic', 'underline', 'strike'],
+            [{ color: [] }, { background: [] }],
+            [{ align: [] }],
+            ['link', 'image', 'table'],
+            // ['clean'], ['code'],
+            ['blockquote', 'code-block'],
+            [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+            [{ 'script': 'sub' }, { 'script': 'super' }],
+            [{ 'indent': '-1' }, { 'indent': '+1' }],
+            [{ font: Font.whitelist }],
+            [{ header: [1, 2, 3, false] }],
+          ],
+          resize: {
+            // 이미지 드래그 리사이즈에 필요한 모듈들
+            modules: ['Resize', 'DisplaySize', 'Toolbar']
+          },
+          table: true,
+          tableUI: true
+        }
+      });
+
+      // 4) Delta JSON 실시간 전송
+      function sendDelta() {
+        const deltaOpsJson = JSON.stringify(quill.getContents().ops);
+        const payload = { title: titleInput.value, content: deltaOpsJson };
+        if (window.flutter_inappwebview) {
+          window.flutter_inappwebview.callHandler('onTextChange', payload);
+        } else {
+          window.parent.postMessage({ type: 'onTextChange', payload }, '*');
+        }
+      }
+      titleInput.addEventListener('input', sendDelta);
+      quill.on('text-change', sendDelta);
+
+      // 5) 초기화 메시지 수신
+      window.addEventListener('message', (e) => {
+        if (e.data?.type === 'clearInputs') {
+          titleInput.value = '';
+          quill.setContents([{ insert: '\n' }]);
+        }
+      });
+
+      // 디버깅용
+      window.myQuill = quill;
+    });
+  </script>
+</body>
+
+</html>
+
+
+
+
+<!--<!DOCTYPE html>-->
+<!--<html lang="ko">-->
+
+<!--<head>-->
+<!--    <meta charset="UTF-8" />-->
+<!--    <title>Quill 에디터 통합 폼 (Delta JSON 전송)</title>-->
+<!--    &lt;!&ndash; Quill CSS &ndash;&gt;-->
+<!--    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" />-->
+<!--    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.core.css" rel="stylesheet" />-->
+<!--    <link href="https://unpkg.com/quill-table-ui@1.0.7/dist/index.css" rel="stylesheet" />-->
+<!--    <style>-->
+<!--        body {-->
+<!--            margin: 0;-->
+<!--            padding: 0;-->
+<!--            font-family: sans-serif;-->
+<!--        }-->
+
+<!--        #titleInput {-->
+<!--            width: 100%;-->
+<!--            padding: 8px;-->
+<!--            font-size: 16px;-->
+<!--            border: 1px solid #ccc;-->
+<!--            box-sizing: border-box;-->
+<!--        }-->
+
+<!--        #editor {-->
+<!--            height: 60vh;-->
+<!--            margin: 8px 0;-->
+<!--            padding: 8px;-->
+<!--            background: #fff;-->
+<!--            box-sizing: border-box;-->
+<!--        }-->
+
+<!--        #submitBtn {-->
+<!--            width: 100%;-->
+<!--            padding: 12px;-->
+<!--            background: #007bff;-->
+<!--            color: #fff;-->
+<!--            border: none;-->
+<!--            cursor: pointer;-->
+<!--        }-->
+
+<!--        #submitBtn:disabled {-->
+<!--            background: #999;-->
+<!--            cursor: not-allowed;-->
+<!--        }-->
+<!--    </style>-->
+<!--</head>-->
+
+<!--<body>-->
+<!--     &lt;!&ndash; //① 제목 입력 &ndash;&gt;-->
+<!--    <input id="titleInput" type="text" placeholder="11vvv제목을 입력하세요" />-->
+
+<!--     &lt;!&ndash; ② Quill 에디터 &ndash;&gt;-->
+<!--    <div id="editor"></div>-->
+
+<!--    &lt;!&ndash; //③ 전송 버튼-->
+<!--    //<button id="submitBtn" disabled>작성하기</button> &ndash;&gt;-->
+
+<!--    &lt;!&ndash; Quill 및 플러그인 로딩 &ndash;&gt;-->
+<!--    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"></script>-->
+<!--    <script src="https://cdn.jsdelivr.net/npm/quill-resize-image@1.0.7/dist/quill-resize-image.min.js"></script>-->
+<!--    <script src="https://unpkg.com/quill-table-ui@1.0.7/dist/umd/index.js"></script>-->
+
+<!--    <script>-->
+<!--        // [1] Quill 모듈 등록-->
+<!--        console.log('index.html[1] Quill 모듈 등록 시작');-->
+<!--        Quill.register('modules/resize', window.QuillResizeImage);-->
+<!--        const rawTableUI = window.QuillTableUI || window.quillTableUI;-->
+<!--        if (rawTableUI) {-->
+<!--            const mod = rawTableUI.default || rawTableUI;-->
+<!--            Quill.register({ 'modules/tableUI': mod }, true);-->
+<!--            console.log('index.html[2] tableUI 모듈 등록 완료');-->
+<!--        } else {-->
+<!--            console.warn('index.html[2] tableUI 모듈을 찾을 수 없습니다.');-->
+<!--        }-->
+
+<!--        document.addEventListener('DOMContentLoaded', () => {-->
+<!--            console.log('index.html[3] DOMContentLoaded — 에디터 초기화');-->
+
+<!--            const titleInput = document.getElementById('titleInput');-->
+<!--            const submitBtn = document.getElementById('submitBtn');-->
+
+<!--            // Draft 불러오기-->
+<!--            const savedTitle = localStorage.getItem('draftTitle') || '';-->
+<!--            const savedContent = localStorage.getItem('draftContent') || '';-->
+<!--            titleInput.value = savedTitle;-->
+<!--            console.log('index.html[4] Draft 제목 로드:', savedTitle);-->
+
+<!--            // Quill 인스턴스 생성-->
+<!--            const quill = new Quill('#editor', {-->
+<!--                theme: 'snow',-->
+<!--                modules: {-->
+<!--                    toolbar: [-->
+<!--                        [{ header: [1, 2, 3, false] }],-->
+<!--                        ['bold', 'italic', 'underline', 'strike'],-->
+<!--                        [{ color: [] }, { background: [] }],-->
+<!--                        [{ align: [] }],-->
+<!--                        ['link', 'image', 'table'],-->
+<!--                        ['clean'], ['code']-->
+<!--                    ],-->
+<!--                    handlers: { image: imageHandler },-->
+<!--                    resize: {}, table: true, tableUI: true-->
+<!--                }-->
+<!--            });-->
+<!--            // Draft 본문 로드-->
+<!--            quill.root.innerHTML = savedContent;-->
+<!--            console.log('index.html[5] Draft 본문 로드:', savedContent);-->
+
+<!--            // 이미지 업로드 핸들러-->
+<!--            function imageHandler() {-->
+<!--                console.log('index.html[6] imageHandler 호출');-->
+<!--                const input = document.createElement('input');-->
+<!--                input.setAttribute('type', 'file');-->
+<!--                input.setAttribute('accept', 'image/*');-->
+<!--                input.click();-->
+<!--                input.onchange = async () => {-->
+<!--                    const file = input.files[0];-->
+<!--                    console.log('index.html[7] 선택된 파일:', file?.name);-->
+<!--                    if (!file) return;-->
+<!--                    const reader = new FileReader();-->
+<!--                    reader.onload = () => {-->
+<!--                        const base64 = reader.result.split(',')[1];-->
+<!--                        console.log('index.html[8] 파일 base64 완성');-->
+<!--                        // Flutter WebView → uploadImage-->
+<!--                        if (window.flutter_inappwebview) {-->
+<!--                            console.log('index.html[9] Flutter uploadImage 호출');-->
+<!--                            window.flutter_inappwebview-->
+<!--                                .callHandler('uploadImage', base64, file.name)-->
+<!--                                .then(url => {-->
+<!--                                    console.log('index.html[10] Flutter 이미지 URL:', url);-->
+<!--                                    insertToEditor(url);-->
+<!--                                });-->
+<!--                        } else {-->
+<!--                            console.log('index.html[9] postMessage uploadImage');-->
+<!--                            window.parent.postMessage(-->
+<!--                                { type: 'uploadImage', payload: { base64, name: file.name } },-->
+<!--                                '*'-->
+<!--                            );-->
+<!--                        }-->
+<!--                    };-->
+<!--                    reader.readAsDataURL(file);-->
+<!--                };-->
+<!--            }-->
+
+<!--            // 에디터에 이미지 삽입-->
+<!--            function insertToEditor(url) {-->
+<!--                console.log('index.html[11] insertToEditor URL=', url);-->
+<!--                const range = quill.getSelection(true);-->
+<!--                quill.insertEmbed(range.index, 'image', url);-->
+<!--                quill.setSelection(range.index + 1);-->
+<!--            }-->
+
+<!--            // 버튼 활성화 상태 업데이트 (버튼은 없지만 유효성 체크용)-->
+<!--            function updateUI() {-->
+<!--                const t = titleInput.value.trim();-->
+<!--                const c = quill.getText().trim();-->
+<!--                console.log('index.html[12] updateUI — title·content 유효성:', !!(t && c));-->
+<!--            }-->
+
+<!--            //  실시간 트래킹: Draft 저장 + Delta JSON 전송-->
+<!--            function trackChange() {-->
+<!--                // Draft 저장-->
+<!--                localStorage.setItem('draftTitle', titleInput.value);-->
+<!--                localStorage.setItem('draftContent', quill.root.innerHTML);-->
+<!--                console.log('index.html[13] trackChange: Draft 저장');-->
+
+<!--                // Delta JSON 생성-->
+<!--                const delta = quill.getContents();-->
+<!--                // Delta 객체 전체-->
+<!--                const deltaJson = JSON.stringify(delta.ops);-->
+<!--                // JSON 문자열-->
+<!--                const payload = {-->
+<!--                    title: titleInput.value,-->
+<!--                    content: deltaJson-->
+<!--                };-->
+<!--                console.log('index.html[14] trackChange payload=', payload);-->
+
+<!--                if (window.flutter_inappwebview) {-->
+<!--                    window.flutter_inappwebview.callHandler('onTextChange', payload);-->
+<!--                } else {-->
+<!--                    window.parent.postMessage({ type: 'onTextChange', payload }, '*');-->
+<!--                }-->
+<!--            }-->
+
+<!--            // 이벤트 바인딩-->
+<!--            titleInput.addEventListener('input', () => {-->
+<!--                console.log('index.html[15] titleInput input');-->
+<!--                updateUI(); trackChange();-->
+<!--            });-->
+<!--            quill.on('text-change', () => {-->
+<!--                console.log('index.html[16] quill text-change');-->
+<!--                updateUI(); trackChange();-->
+<!--            });-->
+
+<!--            // index.html 에서…-->
+<!--            window.addEventListener('message', (event) => {-->
+<!--                // if (event.data && event.data.type === 'clearInputs') {-->
+<!--                if (event.data?.type === 'clearInputs') {-->
+<!--                    console.log('▶ clearInputs 메시지 수신 — 에디터 초기화');-->
+<!--                    // 제목 초기화-->
+<!--                    document.getElementById('titleInput').value = '';-->
+<!--                    // Quill 내용 초기화-->
+<!--                    quill.setContents([{ insert: '\n' }]);-->
+<!--                    // 드래프트도 삭제-->
+<!--                    localStorage.removeItem('draftTitle');-->
+<!--                    localStorage.removeItem('draftContent');-->
+<!--                    updateUI();-->
+<!--                }-->
+<!--            });-->
+
+<!--            // 초기 상태 설정-->
+<!--            console.log('index.html[19] 에디터 및 이벤트 준비 완료');-->
+<!--            updateUI();-->
+
+<!--            // 디버깅용 전역 변수-->
+<!--            window.myQuill = quill;-->
+<!--        });-->
+<!--    </script>-->
+<!--</body>-->
+
+<!--</html>-->
+
+
+
+<!--<!DOCTYPE html>-->
+<!--<html>-->
+<!--<head>-->
+<!--    <meta charset="UTF-8"/>-->
+<!--    <title>Quill 2.0.3 + Resize Image</title>-->
+<!--    &lt;!&ndash; Quill 2.0.3 Snow 테마 CSS &ndash;&gt;-->
+<!--    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet"/>-->
+<!--    &lt;!&ndash; quill-resize-image UMD (v1.0.7) &ndash;&gt;-->
+<!--    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.core.css" rel="stylesheet"/>-->
+<!--    &lt;!&ndash; quill-table-ui 스타일 &ndash;&gt;-->
+<!--    <link href="https://unpkg.com/quill-table-ui@1.0.7/dist/index.css" rel="stylesheet"/>-->
+<!--    <style>-->
+<!--        body {-->
+<!--          margin: 0;-->
+<!--          padding: 0;-->
+<!--        }-->
+<!--        /* 에디터 컨테이너의 마진과 패딩 조절 */-->
+<!--        #editor {-->
+<!--          height: 80vh;-->
+<!--          margin: 16px 0px auto;      /* 상하 여백 8px, 가운데 정렬 */-->
+<!--          padding: 8px;          /* 내부 여백 8px */-->
+<!--          box-sizing: border-box; /* 패딩을 포함한 크기 계산 */-->
+<!--          background-color: #fff; /* 배경색 설정 */-->
+<!--        }-->
+<!--    </style>-->
+<!--</head>-->
+<!--<body>-->
+<!--<div id="editor"></div>-->
+
+<!--<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"></script> &lt;!&ndash; :contentReference[oaicite:0]{index=0} &ndash;&gt;-->
+<!--<script src="https://cdn.jsdelivr.net/npm/quill-resize-image@1.0.7/dist/quill-resize-image.min.js"></script>-->
+<!--<script src="https://unpkg.com/quill-table-ui@1.0.7/dist/umd/index.js"></script>-->
+
+<!--<script>-->
+<!--    // Quill 버전 및 모듈 확인-->
+<!--    console.log('Quill version:', Quill.version);-->
+<!--    console.log('ResizeImage 모듈:', window.QuillResizeImage);-->
+
+<!--    // 이미지 리사이즈 모듈 등록-->
+<!--    Quill.register('modules/resize', window.QuillResizeImage);-->
+
+<!--    // tableUI 모듈 등록: UMD 번들에서 다양한 글로벌 네임스페이스 확인-->
+<!--    const rawTableUI = window.QuillTableUI || window.quillTableUI || null;-->
+<!--    if (rawTableUI) {-->
+<!--        // default 프로퍼티에 모듈이 들어있을 수 있음-->
+<!--        const tableUIModule = rawTableUI.default || rawTableUI;-->
+<!--        Quill.register({ 'modules/tableUI': tableUIModule }, true);-->
+<!--    } else {-->
+<!--        console.warn('quill-table-ui 모듈을 찾을 수 없습니다.');-->
+<!--    }-->
+
+<!--    // 에디터 초기화-->
+<!--    document.addEventListener('DOMContentLoaded', () => {-->
+<!--        const quill = new Quill('#editor', {-->
+<!--            theme: 'snow',-->
+<!--            modules: {-->
+<!--                toolbar: [-->
+<!--                    [{ 'header': [1, 2, 3, false] }],-->
+<!--                    ['bold', 'italic', 'underline', 'strike'],-->
+<!--                    [{ 'color': [] }, { 'background': [] }],-->
+<!--                    [{ 'align': [] }],-->
+<!--                    ['link', 'image', 'table'],-->
+<!--                    ['clean'],-->
+<!--                    ['code']-->
+<!--                ],-->
+<!--                resize: {},    // 이미지 리사이즈 기능 활성화-->
+<!--                table: true,   // 테이블 삽입 기능 활성화-->
+<!--                tableUI: true  // 테이블 UI 플러그인 활성화-->
+<!--            }-->
+<!--        });-->
+
+<!--        // 내용 변경 시 이벤트 발생-->
+<!--        quill.on('text-change', () => {-->
+<!--            const html = quill.root.innerHTML;-->
+<!--            // 모바일/앱(WebView)에서는 flutter_inappwebview 핸들러 호출-->
+<!--            if (window.flutter_inappwebview) {-->
+<!--                window.flutter_inappwebview.callHandler('onTextChange', html);-->
+<!--            } else {-->
+<!--                // 웹에서는 postMessage를 통해 Flutter로 전달-->
+<!--                window.parent.postMessage({ type: 'onTextChange', payload: html }, '*');-->
+<!--            }-->
+<!--        });-->
+
+<!--        // 전역 변수로 에디터 저장(디버깅용)-->
+<!--        window.myQuill = quill;-->
+<!--    });-->
+<!--</script>-->
+<!--</body>-->
+<!--</html>-->

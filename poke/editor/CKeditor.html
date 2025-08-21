@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>CKEditor5 이미지 리사이즈 + 업로드 + 테이블</title>
+    <style>
+        html, body { height: 100%; margin: 0; padding: 0; }
+        #editor { box-sizing: border-box; height: 100%; }
+    </style>
+
+    <!-- 커스텀 빌드: ImageResize 플러그인 포함 (v12.4.0) -->
+    <script src="https://cdn.jsdelivr.net/npm/ckeditor5-build-classic-with-image-resize@12.4.0/build/ckeditor.js"></script> <!-- ([jsdelivr.com](https://www.jsdelivr.com/package/npm/ckeditor5-build-classic-with-image-resize?utm_source=chatgpt.com)) -->
+</head>
+<body>
+<div id="editor"></div>
+<script>
+    ClassicEditor
+      .create(document.querySelector('#editor'), {
+        toolbar: [
+          'bold', 'underline', 'strikethrough',
+          'fontColor', 'fontBackgroundColor',
+          'alignment:left', 'alignment:center', 'alignment:right',
+          'imageUpload', 'resizeImage:50', 'resizeImage:75', 'resizeImage:original',
+          'insertTable', 'mergeTableCells',
+          'undo', 'redo'
+        ],
+        alignment: {
+          options: [ 'left', 'center', 'right' ]
+        },
+        table: {
+          contentToolbar: [ 'tableColumn', 'tableRow', 'mergeTableCells' ]
+        },
+        // 업로드 어댑터를 Base64 방식으로 사용하려면 server-side 설정 필요
+      })
+      .then(editor => {
+        window.editor = editor;
+        editor.model.document.on('change:data', () => {
+          const data = editor.getData();
+          if (window.flutter_inappwebview) {
+            window.flutter_inappwebview.callHandler('onDataChange', data);
+          } else {
+            window.parent.postMessage({ type: 'onDataChange', data }, '*');
+          }
+        });
+      })
+      .catch(error => console.error(error));
+</script>
+</body>
+</html>
