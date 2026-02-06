@@ -97,13 +97,33 @@ PM / 아키텍트 / 유지보수자 필수
 개발자·운영자 공통 기준
 
 ### 3.1 프레임워크 & 언어
-- Flutter (Dart)
+- Flutter: stable 채널 (프로젝트 `.metadata` revision `2663184aa79047d0a33a14a3b607954f8fdd8730`)
+- Dart SDK: `^3.7.2`
+- 앱 버전: `1.0.0+1`
 
 ### 3.2 주요 라이브러리
-- go_router, provider, dio, http
-- flutter_secure_storage, jwt_decoder, dart_jsonwebtoken
-- kakao_flutter_sdk, google_sign_in
-- flutter_quill
+- 라우팅/상태/네트워크
+  - `go_router: ^8.0.3`
+  - `provider: ^6.0.5`
+  - `dio: ^5.4.3+1`
+  - `http: ^1.1.0`
+- 인증/보안
+  - `flutter_secure_storage: ^9.2.1`
+  - `jwt_decoder: ^2.0.1`
+  - `jwt_decode: ^0.3.1`
+  - `dart_jsonwebtoken: ^2.14.0`
+  - `kakao_flutter_sdk: ^1.9.3`
+  - `google_sign_in: ^6.2.1`
+- 에디터/작성 화면(글작성 코드 기준)
+  - `flutter_inappwebview: ^6.1.5` (웹/모바일 브리지)
+  - `universal_html: ^2.2.4` (웹 `window.postMessage` 통신)
+  - `uuid: ^4.5.1` (iframe viewType 고유값 생성)
+  - `http_parser: ^4.1.2` (이미지 업로드 MIME 처리)
+  - `flutter_quill: ^11.2.0`, `flutter_quill_extensions: ^11.0.0`
+- 글작성 HTML 에디터(JS/CSS CDN)
+  - `quill@2.0.3` (CSS/JS)
+  - `quill-resize-image@1.0.7`
+  - `quill-table-ui@1.0.7`
 
 ### 3.3 상태 관리 라이브러리
 - provider (`ChangeNotifierProvider`, `Consumer`, `Provider.of`)
@@ -251,31 +271,61 @@ PM / 아키텍트 / 유지보수자 필수
 - 고급 필터/복합 정렬 UI는 확장 예정
 
 ## 9. 상태 관리 명세
-Riverpod / Redux / Bloc 등
+Provider(`ChangeNotifier`) 기반
 
 ### 9.1 전역 상태 목록
-- 사용자: username, nickname, email, grade, provider, id, sns_id, token, points
-- 게시글 메타: postData(Map), totalPosts
-- 부가 상태: noticeData, itemIndex
+- `UserProvider`
+  - 사용자 식별/프로필: `username`, `nickname`, `email`, `grade`, `provider`, `id`, `sns_id`, `points`
+  - 인증 토큰: `accessToken`, `refreshToken`
+- `ViewCountProvider`
+  - 게시글 메타 캐시: `_postData(Map<int, Map<String, dynamic>>)`
+  - 게시글 수량: `_totalPosts`
+- `NoticeProvider`
+  - 공지 전달 상태: `NoticeData? noticeData`
+- `ItemIndexProvider`
+  - 상세/전환용 인덱스: `int? itemIndex`
+- `QuillEditorController`
+  - 전역 Quill 컨트롤러 인스턴스 (`quill.QuillController.basic()`)
 
 ### 9.2 Provider / Store 구조
-- `UserProvider`: 인증/사용자 데이터/토큰 저장
-- `ViewCountProvider`: 게시글 메타/목록 캐시
-- `NoticeProvider`: 공지 선택 상태
-- `ItemIndexProvider`: 인덱스 전달 상태
+- 앱 루트 `MultiProvider`에서 아래 `ChangeNotifierProvider`를 전역 등록
+  - `NoticeProvider`
+  - `ItemIndexProvider`
+  - `ViewCountProvider`
+  - `UserProvider`
+  - `QuillEditorController`
 
 ### 9.3 상태 생명주기
-- 앱 시작 시 토큰 로드 → 검증 → 사용자 데이터 fetch
-- 라우트 전환 시 필요한 게시판 데이터 재조회
-- 로그아웃 시 Provider + SecureStorage 동시 초기화
+- 앱 시작
+  - `UserProvider` 생성자에서 `loadTokens()` 실행
+  - 이후 `checkAccessTokenAndFetchUserData()`로 토큰 유효성 및 사용자 정보 동기화
+- 로그인/인증 이후
+  - `saveTokens()`으로 SecureStorage + 메모리 상태 동시 저장
+  - 로컬 로그인: `fetchUserData()`
+  - SNS(카카오) 로그인: `fetchSNSUserData()`
+- 라우트/화면 전환
+  - 목록 화면 진입 시 `ViewCountProvider.fetchPostDataFromAPI(boardName)` 호출 패턴
+  - 상세 이동 인덱스는 `ItemIndexProvider.setItemIndex()`로 전달
+- 로그아웃/만료
+  - `clearUser()`에서 메모리 상태 초기화 + `jwt_token`, `refresh_token` 삭제
 
 ### 9.4 캐시 전략
-- 메모리 캐시(Map) + 필요 시 API 재조회
-- 목록 진입 시 갱신, 작성/삭제 시 수동 반영 메서드 제공
+- 사용자/토큰
+  - 영속 스토리지: `FlutterSecureStorage`
+  - 런타임 캐시: `UserProvider` 필드
+- 게시글 메타
+  - 런타임 메모리 캐시(Map)
+  - API 조회 결과를 전체 덮어쓰기(`_postData.clear()` 후 재적재)
+  - 작성/삭제 시 `addPost()`, `removePost()`로 수동 동기화
 
 ### 9.5 invalidate / refresh 정책
-- 브랜치 이동 이벤트에서 게시판별 `fetchPostDataFromAPI` 호출
-- 인증 상태 변경 시 사용자 상태 invalidate
+- 인증 상태 무효화
+  - 토큰 만료(`JwtDecoder.isExpired`) 또는 인증 API 실패 시 `clearUser()` 실행
+- 게시글 캐시 갱신
+  - 게시판별 목록 진입/재진입 시 `fetchPostDataFromAPI()` 재호출
+  - 수동 갱신 필요 시 `updatePostData()` 사용
+- 공지/인덱스 보조 상태
+  - 이벤트 시점에 setter(`setNoticeData`, `setItemIndex`) 호출 후 `notifyListeners()`
 
 ## 10. 라우팅 & 네비게이션
 화면 이동 규칙
@@ -298,10 +348,24 @@ Riverpod / Redux / Bloc 등
 - 비로그인 상태에서 보호 페이지 접근 시 로그인 페이지 이동
 
 ### 10.5 딥링크 정책
-- 웹 path URL 전략 사용
-- 콜백 경로: `/auth/kakao/callback`
-- 웹 공유 링크는 URL Preview(Deeplink Preview)가 반드시 동작해야 하며, 게시글 상세 URL 기준으로 제목/요약/대표 이미지 메타 정보를 제공한다.
-- URL Preview 메타 정책은 Web 진입점에서 일관되게 관리하고, SNS/메신저(카카오톡 등) 미리보기 노출 실패를 장애로 간주해 운영 점검 항목에 포함한다.
+- 웹 URL 전략은 Path 기반(`setPathUrlStrategy`)을 사용한다.
+- OAuth 콜백 경로는 `/auth/kakao/callback`으로 고정한다.
+- 게시글 딥링크 표준 경로
+  - 목록: `/{topMenu}/{boardCode}`
+  - 상세: `/{topMenu}/{boardCode}/:itemIndex`
+  - 수정: `/{topMenu}/{boardCode}/:itemIndex/update`
+- 딥링크 접근 시 정책
+  - 비보호 경로(목록/상세)는 비로그인 접근 허용
+  - 보호 경로(작성/수정/회원)는 토큰 검사 후 미인증 시 `/login` 리다이렉트
+
+### 10.6 URL Preview 정책
+- URL Preview는 딥링크 라우팅과 별도 기능으로 관리한다.
+- 대상 URL: 게시글 상세 URL(`.../:itemIndex`)
+- 제공 메타: `title`, `description(요약)`, `og:image` 대표 이미지
+- 노출 채널: 카카오톡/메신저/SNS 공유 미리보기
+- 운영 기준
+  - 웹 진입점(서버/호스팅)에서 Open Graph 메타를 일관되게 제공한다.
+  - 미리보기 노출 실패는 공유 유입 손실 이슈로 분류하여 점검한다.
 
 ## 11. API 연동 명세
 백엔드와의 계약
