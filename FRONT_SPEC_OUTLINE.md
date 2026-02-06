@@ -359,13 +359,14 @@ Provider(`ChangeNotifier`) 기반
   - 보호 경로(작성/수정/회원)는 토큰 검사 후 미인증 시 `/login` 리다이렉트
 
 ### 10.6 URL Preview 정책
-- URL Preview는 딥링크 라우팅과 별도 기능으로 관리한다.
-- 대상 URL: 게시글 상세 URL(`.../:itemIndex`)
-- 제공 메타: `title`, `description(요약)`, `og:image` 대표 이미지
-- 노출 채널: 카카오톡/메신저/SNS 공유 미리보기
-- 운영 기준
-  - 웹 진입점(서버/호스팅)에서 Open Graph 메타를 일관되게 제공한다.
-  - 미리보기 노출 실패는 공유 유입 손실 이슈로 분류하여 점검한다.
+- URL Preview는 딥링크와 별도 기능으로 관리한다.
+- 현재 웹 진입점(`web/index.html`)에서 기본 SEO/OG 메타를 제공한다.
+  - `meta name="description"`, `meta name="keywords"`
+  - `og:title`, `og:description`, `og:url`
+- 현재는 게시글별 동적 OG 메타 주입 로직은 없고, 정적 메타 중심이다.
+- 운영 정책
+  - SNS/메신저 공유(카카오톡 등) 미리보기 품질 점검을 릴리즈 체크리스트에 포함
+  - 필요 시 서버 렌더링 또는 프리렌더 기반의 동적 메타 주입 구조로 확장
 
 ## 11. API 연동 명세
 백엔드와의 계약
